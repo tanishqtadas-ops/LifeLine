@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -342,32 +343,228 @@ fun SttScreen(modifier: Modifier = Modifier) {
             }
         }
 
-        // ── TEST EMBEDDING BUTTON (DEBUG ONLY) ──
+        // ── TASK 4B: CONFIDENCE / UNKNOWN EVALUATION (DEBUG ONLY) ──
+        var task4Result by remember { mutableStateOf("") }
+
         Button(
             onClick = {
-                // Run text embedding isolated test
-                val engine = TextEmbeddingEngine(context)
-                val testText = "The person vomited during CPR."
-                val vector = engine.embed(testText)
-                val msg = if (vector.isNotEmpty()) {
-                    "SUCCESS! Vector dim: ${vector.size}"
-                } else {
-                    "FAILED to embed text."
+                val retriever = ProtocolRetriever(context)
+                val policy    = ConfidencePolicy()
+                val tag       = "Task4B"
+
+                data class TC(
+                    val query: String,
+                    val expectedDecision: RetrievalDecision,
+                    val note: String = ""
+                )
+
+                val cases = listOf(
+                    // ── OUT-OF-DOMAIN — expect UNKNOWN ───────────────────────────
+                    TC("Can you tell whether this is a heart attack?", RetrievalDecision.UNKNOWN,   "out-of-scope"),
+                    TC("Should I give this person medicine?",       RetrievalDecision.UNKNOWN,   "out-of-scope"),
+                    TC("What disease does this person have?",       RetrievalDecision.UNKNOWN,   "out-of-scope"),
+                    TC("Can you measure their blood pressure?",     RetrievalDecision.UNKNOWN,   "out-of-scope"),
+                    TC("What medication should I use?",             RetrievalDecision.UNKNOWN,   "out-of-scope"),
+
+                    // ── UNSUPPORTED / POSITIVE RESPONDING — expect AMBIGUOUS ───────
+                    TC("The person is responding.",                 RetrievalDecision.AMBIGUOUS, "pos-responding"),
+                    TC("The person seems responsive.",              RetrievalDecision.AMBIGUOUS, "pos-responding"),
+                    TC("They are awake and answering me.",          RetrievalDecision.AMBIGUOUS, "pos-responding"),
+
+                    // ── SUPPORTED — expect VERIFIED ──────────────────────────────
+                    TC("The person vomited during CPR.",            RetrievalDecision.VERIFIED,  "supported"),
+                    TC("How fast should CPR compressions be?",      RetrievalDecision.VERIFIED,  "supported"),
+                    TC("The person is breathing.",                  RetrievalDecision.VERIFIED,  "supported"),
+                    TC("The person is not responding.",             RetrievalDecision.VERIFIED,  "supported"),
+                    TC("How do I give chest compressions?",         RetrievalDecision.VERIFIED,  "supported"),
+
+                    // ── SAFETY-CRITICAL / CONTRADICTION — expect AMBIGUOUS ───────
+                    TC("The person is breathing but not responding.", RetrievalDecision.AMBIGUOUS,"contradiction"),
+                    TC("The person is not breathing.",              RetrievalDecision.AMBIGUOUS, "negated-breathing"),
+                    TC("The person is not responding but is breathing normally.", RetrievalDecision.AMBIGUOUS, "contradiction")
+                )
+
+                android.util.Log.i(tag, "=== Task 4B Confidence Policy Evaluation (${cases.size} cases) ===")
+                android.util.Log.i(tag, "  MIN_SCORE_VERIFIED=${ConfidencePolicy.MIN_SCORE_VERIFIED}")
+                android.util.Log.i(tag, "  MIN_GAP_VERIFIED=${ConfidencePolicy.MIN_GAP_VERIFIED}")
+                android.util.Log.i(tag, "  MIN_GAP_SAFETY_CRITICAL_PAIR=${ConfidencePolicy.MIN_GAP_SAFETY_CRITICAL_PAIR}")
+
+                var pass = 0
+                val failures = mutableListOf<String>()
+
+                val sb = StringBuilder()
+                sb.appendLine("=== Task 4B: Confidence Policy ===")
+                sb.appendLine("cases: ${cases.size}")
+                sb.appendLine()
+
+                cases.forEachIndexed { idx, tc ->
+                    val match    = retriever.findBestMatch(tc.query)
+                    val decision = policy.evaluate(tc.query, match)
+                    val gap      = match.score - match.runnerUpScore
+                    val hit      = decision.decision == tc.expectedDecision
+                    val status   = if (hit) "PASS" else "FAIL"
+                    if (hit) pass++ else failures.add(
+                        "\"${tc.query}\"\n  expected=${tc.expectedDecision} got=${decision.decision}"
+                    )
+
+                    android.util.Log.i(tag, "[$status][${idx+1}] \"${tc.query}\"")
+                    android.util.Log.i(tag, "  top=${match.protocol.protocolId} score=${"%.4f".format(match.score)}")
+                    android.util.Log.i(tag, "  runner=${match.runnerUpId} score=${"%.4f".format(match.runnerUpScore)} gap=${"%.4f".format(gap)}")
+                    android.util.Log.i(tag, "  signals=${decision.detectedSignals}")
+                    android.util.Log.i(tag, "  decision=${decision.decision}  expected=${tc.expectedDecision}")
+                    android.util.Log.i(tag, "  reason=${decision.reason}")
+
+                    val sig = if (decision.detectedSignals.isNotEmpty())
+                        " sig=${decision.detectedSignals.joinToString(",")}" else ""
+                    sb.appendLine("${idx+1}. $status [${tc.note}]")
+                    sb.appendLine("   ${decision.decision} top=${match.protocol.protocolId}")
+                    sb.appendLine("   score=${"%.4f".format(match.score)} gap=${"%.4f".format(gap)}$sig")
+                    sb.appendLine("   ${decision.reason}")
+                    sb.appendLine()
                 }
-                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                android.util.Log.i("TextEmbeddingEngine", "Test Text: $testText | Dim: ${vector.size} | First val: ${vector.firstOrNull()}")
-                engine.close()
+
+                val total    = cases.size
+                val accuracy = pass * 100f / total
+
+                android.util.Log.i(tag, "--- SUMMARY ---")
+                android.util.Log.i(tag, "Total: $total  PASS: $pass  Accuracy: ${"%.1f".format(accuracy)}%")
+                failures.forEach { android.util.Log.i(tag, "FAIL: $it") }
+
+                sb.appendLine("─────────────────────")
+                sb.appendLine("TOTAL    : $total")
+                sb.appendLine("PASS     : $pass")
+                sb.appendLine("FAIL     : ${total - pass}")
+                sb.appendLine("ACCURACY : ${"%.1f".format(accuracy)}%")
+                if (failures.isNotEmpty()) {
+                    sb.appendLine()
+                    sb.appendLine("FAILURES:")
+                    failures.forEach { sb.appendLine(it) }
+                }
+
+                retriever.close()
+                task4Result = sb.toString().trim()
             },
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9B59B6)),
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A)),
             shape = RoundedCornerShape(12.dp)
         ) {
             Text(
-                text = "🔧 Test Text Embedding (USE)",
-                fontSize = 15.sp,
+                text = "🛡 Run Task 4B: Confidence Policy — 16 cases",
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
+        }
+
+        // Show Task 4 results inline (scrollable)
+        if (task4Result.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1A0027)),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = task4Result,
+                        modifier = Modifier.padding(12.dp),
+                        fontSize = 11.sp,
+                        color = Color(0xFFCE93D8),
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        lineHeight = 17.sp
+                    )
+                }
+            }
+        }
+
+        // ── TASK 5: AI-RESULT PIPELINE DEMO (DEBUG ONLY) ──
+        var aiResultDemo by remember { mutableStateOf("") }
+
+        Button(
+            onClick = {
+                val engine = LifeLineAiEngine(context)
+                val tag = "Task5"
+
+                val testQueries = listOf(
+                    "The person vomited during CPR.",             // Expect VERIFIED
+                    "Should I give this person medicine?",        // Expect UNKNOWN
+                    "The person is breathing but not responding." // Expect AMBIGUOUS
+                )
+
+                val sb = StringBuilder()
+                sb.appendLine("=== Task 5: AiResult Pipeline Demo ===")
+                sb.appendLine()
+
+                testQueries.forEachIndexed { i, q ->
+                    val res = engine.process(q)
+                    android.util.Log.i(tag, "[$i] Query: \"${res.query}\"")
+                    android.util.Log.i(tag, "  decision=${res.decision}")
+                    android.util.Log.i(tag, "  protocolId=${res.protocolId}")
+                    android.util.Log.i(tag, "  title=${res.title}")
+                    android.util.Log.i(tag, "  response=${res.response}")
+                    android.util.Log.i(tag, "  reference=${res.reference}")
+                    android.util.Log.i(tag, "  version=${res.version}")
+                    android.util.Log.i(tag, "  topScore=${res.topScore}")
+                    android.util.Log.i(tag, "  runnerUpScore=${res.runnerUpScore}")
+                    android.util.Log.i(tag, "  gap=${res.gap}")
+                    android.util.Log.i(tag, "  reasonCode=${res.reasonCode}")
+                    android.util.Log.i(tag, "  signals=${res.detectedSignals}")
+
+                    sb.appendLine("Query: \"${res.query}\"")
+                    sb.appendLine("  Decision: ${res.decision}")
+                    sb.appendLine("  Protocol: ${res.protocolId ?: "(none)"}")
+                    sb.appendLine("  Title: ${res.title ?: "(none)"}")
+                    sb.appendLine("  Response: ${res.response ?: "(none)"}")
+                    sb.appendLine("  Reference: ${res.reference ?: "(none)"}")
+                    sb.appendLine("  Version: ${res.version ?: "(none)"}")
+                    sb.appendLine("  Scores: top=${"%.4f".format(res.topScore)} runner=${"%.4f".format(res.runnerUpScore)} gap=${"%.4f".format(res.gap)}")
+                    sb.appendLine("  Reason: ${res.reasonCode}")
+                    sb.appendLine("  Signals: ${res.detectedSignals}")
+                    sb.appendLine()
+                }
+
+                engine.close()
+                aiResultDemo = sb.toString().trim()
+            },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00796B)),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text(
+                text = "✨ Run Task 5: AiResult Pipeline Demo",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        }
+
+        // Show Task 5 results inline (scrollable)
+        if (aiResultDemo.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF00241E)),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = aiResultDemo,
+                        modifier = Modifier.padding(12.dp),
+                        fontSize = 11.sp,
+                        color = Color(0xFF80CBC4),
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        lineHeight = 17.sp
+                    )
+                }
+            }
         }
 
         // Disclaimer

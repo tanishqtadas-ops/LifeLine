@@ -57,6 +57,29 @@ class TextEmbeddingEngine(private val context: Context) {
     }
 
     /**
+     * Calculates the cosine similarity between two embedding vectors.
+     * Returns a value between -1.0 (opposite) and 1.0 (identical meaning).
+     * Returns 0.0 if either vector is empty or sizes differ.
+     */
+    fun cosineSimilarity(v1: FloatArray, v2: FloatArray): Float {
+        if (v1.isEmpty() || v2.isEmpty() || v1.size != v2.size) {
+            Log.e(TAG, "cosineSimilarity: invalid vectors (sizes ${v1.size} vs ${v2.size})")
+            return 0f
+        }
+        var dot = 0f
+        var normA = 0f
+        var normB = 0f
+        for (i in v1.indices) {
+            dot   += v1[i] * v2[i]
+            normA += v1[i] * v1[i]
+            normB += v2[i] * v2[i]
+        }
+        val denom = Math.sqrt(normA.toDouble()) * Math.sqrt(normB.toDouble())
+        if (denom == 0.0) return 0f
+        return (dot / denom).toFloat()
+    }
+
+    /**
      * Release resources when this engine is no longer needed.
      */
     fun close() {

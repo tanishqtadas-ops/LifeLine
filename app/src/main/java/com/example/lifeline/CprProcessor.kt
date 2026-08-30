@@ -70,6 +70,7 @@ class CprProcessor {
     // ── Runtime state ─────────────────────────────────────────────────────────
 
     private var gravityEstimate = 0f       // Running EMA of acceleration magnitude
+    private var gravityInitialized = false // Guards the first-sample warm-up (avoids == 0f float equality trap)
     private var smoothedSignal = 0f        // EMA of gravity-removed dynamic signal
     private var isAboveThreshold = false   // True while signal is over PEAK_THRESHOLD
     private var lastCompressionTimeMs = 0L // Wall-clock ms of last confirmed compression
@@ -98,6 +99,7 @@ class CprProcessor {
      */
     fun reset() {
         gravityEstimate = 0f
+        gravityInitialized = false
         smoothedSignal = 0f
         isAboveThreshold = false
         lastCompressionTimeMs = 0L
@@ -113,20 +115,22 @@ class CprProcessor {
      * @param x  Acceleration on X axis (m/s²)
      * @param y  Acceleration on Y axis (m/s²)
      * @param z  Acceleration on Z axis (m/s²)
-     * @param timestampNs  Sensor event timestamp in nanoseconds (from SensorEvent.timestamp).
-     *                     Used only for ordering; wall-clock time (System.currentTimeMillis)
-     *                     drives BPM so the sliding window is stable even if the sensor
-     *                     clock drifts relative to real time.
+     *
+     * Wall-clock time (System.currentTimeMillis) drives BPM internally; the sensor
+     * timestamp is intentionally not used here because it can drift relative to real
+     * time and is unnecessary for the sliding-window calculation.
      */
-    fun processSample(x: Float, y: Float, z: Float, @Suppress("UNUSED_PARAMETER") timestampNs: Long) {
+    fun processSample(x: Float, y: Float, z: Float) {
 
         // ── Step 1: Acceleration magnitude (orientation-agnostic) ─────────────
         val magnitude = sqrt((x * x + y * y + z * z).toDouble()).toFloat()
 
         // ── Step 2: Gravity removal via EMA ──────────────────────────────────
-        // On the very first call gravityEstimate is 0; warm it up immediately.
-        if (gravityEstimate == 0f) {
+        // On the very first call seed the EMA directly so it doesn't start from 0.
+        // Using an explicit boolean avoids the fragile float == 0f equality check.
+        if (!gravityInitialized) {
             gravityEstimate = magnitude
+            gravityInitialized = true
         }
         gravityEstimate = GRAVITY_ALPHA * gravityEstimate + (1f - GRAVITY_ALPHA) * magnitude
         val dynamicAccel = magnitude - gravityEstimate
@@ -183,7 +187,12 @@ class CprProcessor {
         }
 
         val spanMs = compressionTimestamps.last() - compressionTimestamps.first()
-        if (spanMs <= 0L) return  // Guard against identical timestamps (shouldn't happen)
+        if (spanMs <= 0L) {
+            // Identical timestamps are pathological; reset to IDLE rather than
+            // leaving a stale TOO_SLOW / TOO_FAST status visible.
+            status = CprStatus.IDLE
+            return
+        }
 
         val spanMinutes = spanMs / 60_000f
         bpm = (n - 1).toFloat() / spanMinutes

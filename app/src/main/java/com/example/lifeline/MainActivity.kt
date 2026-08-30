@@ -116,10 +116,9 @@ fun CprMonitorScreen(modifier: Modifier = Modifier) {
             override fun onSensorChanged(event: SensorEvent?) {
                 event ?: return
                 processor.processSample(
-                    x             = event.values[0],
-                    y             = event.values[1],
-                    z             = event.values[2],
-                    timestampNs   = event.timestamp
+                    x = event.values[0],
+                    y = event.values[1],
+                    z = event.values[2]
                 )
                 // Push processor outputs to Compose state (runs on sensor thread,
                 // but Compose state writes are thread-safe via snapshot system).
@@ -143,11 +142,13 @@ fun CprMonitorScreen(modifier: Modifier = Modifier) {
     }
 
     // ── Session timer — ticks every second while session is active ────────────
+    // delay() runs first so the displayed value is always a whole elapsed second,
+    // preventing a spurious non-zero reading on the very first recomposition.
     LaunchedEffect(isSessionActive) {
         if (!isSessionActive) return@LaunchedEffect
         while (true) {
-            elapsedSeconds = (System.currentTimeMillis() - sessionStartMs) / 1000L
             delay(1_000L)
+            elapsedSeconds = (System.currentTimeMillis() - sessionStartMs) / 1000L
         }
     }
 
@@ -280,17 +281,20 @@ fun CprMonitorScreen(modifier: Modifier = Modifier) {
         Button(
             onClick = {
                 if (isSessionActive) {
-                    // Stop session — sensor will unregister via DisposableEffect
+                    // Stop session — DisposableEffect will unregister the listener.
                     isSessionActive = false
                 } else {
-                    // Start session — reset processor and timer
+                    // Reset processor and all UI state atomically before enabling the
+                    // session. The sensor thread is not running yet at this point
+                    // (DisposableEffect fires after this lambda returns), so there is
+                    // no race between the reset writes and incoming sensor data.
                     processor.reset()
                     compressionCount = 0
                     bpm              = 0f
                     status           = CprStatus.IDLE
                     elapsedSeconds   = 0L
                     sessionStartMs   = System.currentTimeMillis()
-                    isSessionActive  = true
+                    isSessionActive  = true   // triggers DisposableEffect → registers listener
                 }
             },
             enabled = sensorAvailable,

@@ -28,6 +28,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -57,12 +60,56 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             LifeLineTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    CprMonitorScreen(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
-                    )
+                var selectedTab by remember { mutableIntStateOf(0) }
+
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    bottomBar = {
+                        NavigationBar(
+                            containerColor = Color(0xFF16283B),
+                            contentColor = Color.White
+                        ) {
+                            NavigationBarItem(
+                                selected = selectedTab == 0,
+                                onClick = { selectedTab = 0 },
+                                label = { Text("CPR Monitor", fontWeight = FontWeight.SemiBold) },
+                                icon = { Text("❤", fontSize = 20.sp) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = Color(0xFFE74C3C),
+                                    selectedTextColor = Color.White,
+                                    unselectedIconColor = Color(0xFF8899AA),
+                                    unselectedTextColor = Color(0xFF8899AA),
+                                    indicatorColor = Color(0xFF1E2A3A)
+                                )
+                            )
+                            NavigationBarItem(
+                                selected = selectedTab == 1,
+                                onClick = { selectedTab = 1 },
+                                label = { Text("Voice Assistant", fontWeight = FontWeight.SemiBold) },
+                                icon = { Text("🎙", fontSize = 20.sp) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = Color(0xFF3498DB),
+                                    selectedTextColor = Color.White,
+                                    unselectedIconColor = Color(0xFF8899AA),
+                                    unselectedTextColor = Color(0xFF8899AA),
+                                    indicatorColor = Color(0xFF1E2A3A)
+                                )
+                            )
+                        }
+                    }
+                ) { innerPadding ->
+                    when (selectedTab) {
+                        0 -> CprMonitorScreen(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(innerPadding)
+                        )
+                        1 -> SttScreen(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(innerPadding)
+                        )
+                    }
                 }
             }
         }

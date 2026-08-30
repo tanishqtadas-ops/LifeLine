@@ -47,6 +47,9 @@ dependencies {
 
     // Vosk offline speech recognition
     implementation("com.alphacephei:vosk-android:0.3.75")
+    
+    // MediaPipe for Text Embeddings (Universal Sentence Encoder)
+    implementation("com.google.mediapipe:tasks-text:0.10.14")
 
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

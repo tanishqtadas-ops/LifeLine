@@ -342,6 +342,34 @@ fun SttScreen(modifier: Modifier = Modifier) {
             }
         }
 
+        // ── TEST EMBEDDING BUTTON (DEBUG ONLY) ──
+        Button(
+            onClick = {
+                // Run text embedding isolated test
+                val engine = TextEmbeddingEngine(context)
+                val testText = "The person vomited during CPR."
+                val vector = engine.embed(testText)
+                val msg = if (vector.isNotEmpty()) {
+                    "SUCCESS! Vector dim: ${vector.size}"
+                } else {
+                    "FAILED to embed text."
+                }
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                android.util.Log.i("TextEmbeddingEngine", "Test Text: $testText | Dim: ${vector.size} | First val: ${vector.firstOrNull()}")
+                engine.close()
+            },
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9B59B6)),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text(
+                text = "🔧 Test Text Embedding (USE)",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        }
+
         // Disclaimer
         Text(
             text = "Emergency Voice Assistant · Offline Speech Recognition",

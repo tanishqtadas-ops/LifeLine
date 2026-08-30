@@ -13,17 +13,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,7 +27,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// ── Colours (intentionally match the CPR screen palette) ─────────────────────
+// ── Colours (match the CPR screen palette) ────────────────────────────────────
 
 private val AiColorBackground = Color(0xFF0D1B2A)
 private val AiColorSurface    = Color(0xFF16283B)
@@ -48,36 +41,29 @@ private val AiColorGrey       = Color(0xFF7F8C8D)
 private val AiColorAccent     = Color(0xFF3498DB)  // Calm blue for AI branding
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AskLifeLineScreen
+// AskLifeLineScreen — pure UI component.
 //
-// Entry point for the AI guidance UI layer.
+// This composable is completely unaware of where [result] came from. It simply
+// renders the appropriate panel for the given [AiResult.status].
 //
-// CURRENT BEHAVIOUR (mock mode):
-//   Displays one of two AiMockData objects. A toggle button at the bottom
-//   switches between VERIFIED and UNKNOWN so you can test both states.
+// Callers are responsible for supplying the result:
 //
-// FUTURE INTEGRATION:
-//   Remove the mock toggle. Pass the real AiResult from the AI module:
+//   // Development (mock):
+//   AskLifeLineScreen(result = AiMockData.verifiedResult)
 //
-//     AskLifeLineScreen(result = myAiModule.getResult())
+//   // Production (real AI module, future):
+//   AskLifeLineScreen(result = aiEngine.getResult(userQuery))
 //
-//   The screen renders correctly for any AiResult — no changes needed here.
+// The optional [onAskAction] callback is reserved for a future "Ask" button
+// (e.g. voice input trigger). Pass a no-op lambda until the AI module exists.
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-fun AskLifeLineScreen(modifier: Modifier = Modifier) {
-
-    // ── Mock toggle state ─────────────────────────────────────────────────────
-    // TODO (AI integration): replace `currentResult` with a real AiResult
-    //      passed in from the offline AI module. Remove the toggle button below.
-    var showVerified by remember { mutableStateOf(true) }
-    val currentResult: AiResult = if (showVerified) {
-        AiMockData.verifiedResult
-    } else {
-        AiMockData.unknownResult
-    }
-
-    // ── Layout ────────────────────────────────────────────────────────────────
+fun AskLifeLineScreen(
+    result: AiResult,
+    modifier: Modifier = Modifier,
+    onAskAction: (() -> Unit)? = null   // reserved — not yet wired to any input
+) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -91,20 +77,13 @@ fun AskLifeLineScreen(modifier: Modifier = Modifier) {
         // Header
         AiHeader()
 
-        // Result panel — switches on status
-        when (currentResult.status) {
-            AiResultStatus.VERIFIED -> VerifiedPanel(result = currentResult)
-            AiResultStatus.UNKNOWN  -> UnknownPanel(result = currentResult)
+        // Result panel — switches purely on result.status
+        when (result.status) {
+            AiResultStatus.VERIFIED -> VerifiedPanel(result = result)
+            AiResultStatus.UNKNOWN  -> UnknownPanel(result = result)
         }
 
         Spacer(Modifier.height(8.dp))
-
-        // ── DEV TOGGLE — remove when integrating real AI module ──────────────
-        AiDevToggle(
-            showingVerified = showVerified,
-            onToggle        = { showVerified = !showVerified }
-        )
-        // ── END DEV TOGGLE ────────────────────────────────────────────────────
 
         // Disclaimer
         Text(
@@ -139,7 +118,7 @@ private fun VerifiedPanel(result: AiResult) {
             modifier            = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            AiDetailRow(label = "Protocol", value = result.title)
+            AiDetailRow(label = "Protocol",   value = result.title)
             AiDivider()
             AiDetailRow(label = "Confidence", value = result.confidenceLevel)
             if (result.source.isNotBlank()) {
@@ -157,11 +136,11 @@ private fun VerifiedPanel(result: AiResult) {
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
             Text(
-                text       = "Guidance",
-                fontSize   = 12.sp,
-                color      = AiColorCardText,
+                text          = "Guidance",
+                fontSize      = 12.sp,
+                color         = AiColorCardText,
                 letterSpacing = 1.sp,
-                fontWeight = FontWeight.Medium
+                fontWeight    = FontWeight.Medium
             )
             Spacer(Modifier.height(8.dp))
             Text(
@@ -181,7 +160,7 @@ private fun VerifiedPanel(result: AiResult) {
 @Composable
 private fun UnknownPanel(result: AiResult) {
 
-    // Status badge — amber (caution, not red — this is not an error, just uncertain)
+    // Status badge — amber (caution, not an error)
     AiStatusBadge(
         label = "⚠  Low Confidence",
         color = AiColorAmber
@@ -225,9 +204,9 @@ private fun UnknownPanel(result: AiResult) {
         shape    = RoundedCornerShape(14.dp)
     ) {
         Row(
-            modifier            = Modifier.padding(16.dp),
+            modifier              = Modifier.padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment   = Alignment.CenterVertically
+            verticalAlignment     = Alignment.CenterVertically
         ) {
             Text(text = "📞", fontSize = 28.sp)
             Column {
@@ -248,11 +227,11 @@ private fun UnknownPanel(result: AiResult) {
 
     // Confidence label for reference
     Text(
-        text       = "Confidence: ${result.confidenceLevel}",
-        fontSize   = 11.sp,
-        color      = AiColorGrey,
-        fontStyle  = FontStyle.Italic,
-        textAlign  = TextAlign.Center
+        text      = "Confidence: ${result.confidenceLevel}",
+        fontSize  = 11.sp,
+        color     = AiColorGrey,
+        fontStyle = FontStyle.Italic,
+        textAlign = TextAlign.Center
     )
 }
 
@@ -332,50 +311,4 @@ private fun AiDivider() {
             .height(1.dp)
             .background(Color(0xFF253545))
     )
-}
-
-/**
- * DEV-ONLY toggle button.
- * Lets testers switch between VERIFIED and UNKNOWN mock results at runtime.
- * Remove this composable and its call site when integrating the real AI module.
- */
-@Composable
-private fun AiDevToggle(showingVerified: Boolean, onToggle: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors   = CardDefaults.cardColors(containerColor = Color(0xFF0A1520)),
-        shape    = RoundedCornerShape(10.dp)
-    ) {
-        Column(
-            modifier            = Modifier.padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text      = "[ DEV ] Mock data toggle — remove before release",
-                fontSize  = 10.sp,
-                color     = AiColorGrey,
-                textAlign = TextAlign.Center,
-                letterSpacing = 0.5.sp
-            )
-            Text(
-                text      = "Currently showing: ${if (showingVerified) "VERIFIED (HIGH confidence)" else "UNKNOWN (LOW confidence)"}",
-                fontSize  = 12.sp,
-                color     = if (showingVerified) AiColorGreen else AiColorAmber,
-                fontWeight = FontWeight.Medium,
-                textAlign = TextAlign.Center
-            )
-            OutlinedButton(
-                onClick  = onToggle,
-                modifier = Modifier.fillMaxWidth(),
-                shape    = RoundedCornerShape(8.dp),
-                colors   = ButtonDefaults.outlinedButtonColors(contentColor = AiColorAccent)
-            ) {
-                Text(
-                    text     = if (showingVerified) "Switch → UNKNOWN" else "Switch → VERIFIED",
-                    fontSize = 13.sp
-                )
-            }
-        }
-    }
 }

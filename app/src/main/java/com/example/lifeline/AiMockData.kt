@@ -8,17 +8,17 @@ package com.example.lifeline
  *
  * ─────────────────────────────────────────────────────────────────
  * HOW TO SWITCH BETWEEN VERIFIED AND UNKNOWN IN THE UI:
- *   In AskLifeLineScreen.kt, change the `currentMock` variable:
+ *   The dev toggle lives in AppNavHost (MainActivity.kt) — tap the banner
+ *   at the top of the Ask LifeLine tab at runtime.
  *
- *     var currentMock by remember { mutableStateOf(AiMockData.verifiedResult) }
- *     // or
- *     var currentMock by remember { mutableStateOf(AiMockData.unknownResult) }
- *
- *   The toggle button on the screen also switches between them at runtime.
+ *   To change the starting state, edit `showVerifiedMock` in AppNavHost:
+ *     var showVerifiedMock by remember { mutableStateOf(false) }  // starts UNKNOWN
  * ─────────────────────────────────────────────────────────────────
  *
- * When the AI module is integrated, delete or ignore this file and pass the
- * real AiResult directly to AskLifeLineScreen.
+ * When the AI module is integrated:
+ *   1. Remove the DevMockSelector composable from AppNavHost.
+ *   2. Replace `currentAiResult` with the real result from the AI engine.
+ *   3. This file (AiMockData.kt) can then be deleted.
  */
 object AiMockData {
 

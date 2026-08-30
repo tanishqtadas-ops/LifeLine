@@ -87,13 +87,29 @@ class MainActivity : ComponentActivity() {
 private fun AppNavHost(modifier: Modifier = Modifier) {
     var selectedTab by remember { mutableIntStateOf(0) }
 
+    // ── [DEV] Mock AI result selector ─────────────────────────────────────────
+    // Owns which mock AiResult is currently displayed on the Ask LifeLine tab.
+    // AskLifeLineScreen is unaware this is mock data — it only receives AiResult.
+    //
+    // TO INTEGRATE REAL AI MODULE:
+    //   1. Remove this var and the DevMockSelector() call below.
+    //   2. Replace `currentAiResult` with: val currentAiResult = aiEngine.getResult(...)
+    //   3. AskLifeLineScreen(result = currentAiResult) — no other change needed.
+    var showVerifiedMock by remember { mutableStateOf(true) }
+    val currentAiResult: AiResult = if (showVerifiedMock) {
+        AiMockData.verifiedResult
+    } else {
+        AiMockData.unknownResult
+    }
+    // ── END DEV MOCK SELECTOR ─────────────────────────────────────────────────
+
     val tabs = listOf("CPR Monitor", "Ask LifeLine")
 
     Column(modifier = modifier.background(Color(0xFF0D1B2A))) {
 
         // Tab bar — each tab is a clickable Box
         Row(
-            modifier = Modifier
+            modifier              = Modifier
                 .fillMaxWidth()
                 .background(Color(0xFF16283B)),
             horizontalArrangement = Arrangement.spacedBy(0.dp)
@@ -128,11 +144,55 @@ private fun AppNavHost(modifier: Modifier = Modifier) {
         Box(modifier = Modifier.weight(1f)) {
             when (selectedTab) {
                 0 -> CprMonitorScreen(modifier = Modifier.fillMaxSize())
-                1 -> AskLifeLineScreen(modifier = Modifier.fillMaxSize())
+                1 -> Column(modifier = Modifier.fillMaxSize()) {
+                    // [DEV] Mock selector sits above the pure screen — remove on AI integration
+                    DevMockSelector(
+                        showingVerified = showVerifiedMock,
+                        onToggle        = { showVerifiedMock = !showVerifiedMock }
+                    )
+                    // Pure screen — receives AiResult, knows nothing about AiMockData
+                    AskLifeLineScreen(
+                        result   = currentAiResult,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
     }
 }
+
+/**
+ * [DEV-ONLY] A small banner that shows which mock AiResult is active and lets
+ * the tester toggle between VERIFIED and UNKNOWN at runtime.
+ *
+ * This composable lives in MainActivity (the caller layer), NOT inside
+ * AskLifeLineScreen. Remove it and its call site when integrating the real AI module.
+ */
+@Composable
+private fun DevMockSelector(showingVerified: Boolean, onToggle: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF0A1520))
+            .clickable { onToggle() }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment     = Alignment.CenterVertically
+    ) {
+        Text(
+            text      = "[ DEV ] Mock: ${if (showingVerified) "VERIFIED" else "UNKNOWN"}",
+            fontSize  = 11.sp,
+            color     = if (showingVerified) Color(0xFF2ECC71) else Color(0xFFF39C12),
+            fontWeight = FontWeight.Medium
+        )
+        Text(
+            text     = "tap to switch →",
+            fontSize = 10.sp,
+            color    = Color(0xFF506070)
+        )
+    }
+}
+
 
 
 // ── Colour palette ────────────────────────────────────────────────────────────

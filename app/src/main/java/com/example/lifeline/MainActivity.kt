@@ -12,6 +12,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +30,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -36,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,7 +62,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             LifeLineTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    CprMonitorScreen(
+                    AppNavHost(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(innerPadding)
@@ -69,6 +72,68 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+// ── Two-tab navigator ─────────────────────────────────────────────────────────
+
+/**
+ * Hosts both screens behind a simple two-tab bar.
+ * Tab 0 = CPR Monitor (existing working screen — zero changes).
+ * Tab 1 = Ask LifeLine (new AI guidance screen).
+ *
+ * When the full app navigation is added in a future phase, replace this with
+ * a proper NavHost.
+ */
+@Composable
+private fun AppNavHost(modifier: Modifier = Modifier) {
+    var selectedTab by remember { mutableIntStateOf(0) }
+
+    val tabs = listOf("CPR Monitor", "Ask LifeLine")
+
+    Column(modifier = modifier.background(Color(0xFF0D1B2A))) {
+
+        // Tab bar — each tab is a clickable Box
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF16283B)),
+            horizontalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            tabs.forEachIndexed { index, label ->
+                val isSelected = index == selectedTab
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { selectedTab = index }
+                        .background(
+                            if (isSelected) Color(0xFF0D1B2A)
+                            else Color(0xFF16283B)
+                        )
+                        .padding(vertical = 14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text       = label,
+                        fontSize   = 13.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color      = if (isSelected) Color(0xFF2ECC71) else Color(0xFF7F8C8D),
+                        textAlign  = TextAlign.Center
+                    )
+                }
+            }
+        }
+
+        HorizontalDivider(color = Color(0xFF253545), thickness = 1.dp)
+
+        // Screen content
+        Box(modifier = Modifier.weight(1f)) {
+            when (selectedTab) {
+                0 -> CprMonitorScreen(modifier = Modifier.fillMaxSize())
+                1 -> AskLifeLineScreen(modifier = Modifier.fillMaxSize())
+            }
+        }
+    }
+}
+
 
 // ── Colour palette ────────────────────────────────────────────────────────────
 

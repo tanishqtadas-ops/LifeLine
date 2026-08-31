@@ -39,8 +39,14 @@ data class AiResult(
     val reasonCode: String?,
     val detectedSignals: List<String> = emptyList()
 ) {
-    /** True if the result is safely verified and ready to display emergency guidance. */
+    /** True if the result is safely verified by the confidence policy. */
     val isVerified: Boolean get() = decision == RetrievalDecision.VERIFIED
+
+    /** True if protocol was verified by the retriever but official guidance text is pending clinical review. */
+    val isPendingReview: Boolean get() = isVerified && (response == null || response.contains("PENDING AUTHORITATIVE REVIEW") || response.contains("PENDING REVIEW"))
+
+    /** True if protocol is verified AND guidance is fully approved for display. */
+    val isApprovedGuidance: Boolean get() = isVerified && !isPendingReview
 
     /** True if the result is ambiguous or contradictory and requires user clarification. */
     val isAmbiguous: Boolean get() = decision == RetrievalDecision.AMBIGUOUS

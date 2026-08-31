@@ -73,7 +73,12 @@ fun SttScreen(modifier: Modifier = Modifier) {
     var transcript by remember { mutableStateOf("") }
     var partialResult by remember { mutableStateOf("") }
 
-    val scrollState = rememberScrollState()
+    // ── Live AI Pipeline State ────────────────────────────────────────────────
+    var liveAiResult by remember { mutableStateOf<AiResult?>(null) }
+    var aiEngine by remember { mutableStateOf<LifeLineAiEngine?>(null) }
+
+    val transcriptScrollState = rememberScrollState()
+    val outerScrollState = rememberScrollState()
 
     // ── STT Engine reference ──────────────────────────────────────────────────
     var sttRecognizer by remember { mutableStateOf<VoskSpeechRecognizer?>(null) }
@@ -85,13 +90,20 @@ fun SttScreen(modifier: Modifier = Modifier) {
             }
 
             override fun onResult(text: String) {
-                if (text.isNotBlank()) {
+                val cleanText = text.trim()
+                if (cleanText.isNotBlank()) {
                     transcript = if (transcript.isEmpty()) {
-                        text
+                        cleanText
                     } else {
-                        "$transcript\n$text"
+                        "$transcript\n$cleanText"
                     }
                     partialResult = ""
+
+                    // ── Live AI Pipeline Execution ────────────────────────────
+                    aiEngine?.let { engine ->
+                        val result = engine.process(cleanText)
+                        liveAiResult = result
+                    }
                 }
             }
 
@@ -130,10 +142,13 @@ fun SttScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    // ── Lifecycle Handling ────────────────────────────────────────────────────
+    // ── Lifecycle Handling (STT & AI Engine) ──────────────────────────────────
     DisposableEffect(Unit) {
         val recognizer = VoskSpeechRecognizer(context.applicationContext, listener)
         sttRecognizer = recognizer
+
+        val engine = LifeLineAiEngine(context)
+        aiEngine = engine
 
         // Check permission and initialize model
         val hasPermission = ContextCompat.checkSelfPermission(
@@ -151,12 +166,13 @@ fun SttScreen(modifier: Modifier = Modifier) {
 
         onDispose {
             recognizer.destroy()
+            engine.close()
         }
     }
 
-    // Auto-scroll to bottom when transcript updates
+    // Auto-scroll transcript to bottom when updated
     LaunchedEffect(transcript, partialResult) {
-        scrollState.animateScrollTo(scrollState.maxValue)
+        transcriptScrollState.animateScrollTo(transcriptScrollState.maxValue)
     }
 
     // Animated status badge color
@@ -174,7 +190,9 @@ fun SttScreen(modifier: Modifier = Modifier) {
     // ── Layout ────────────────────────────────────────────────────────────────
     Column(
         modifier = modifier
+            .fillMaxSize()
             .background(ColorBackground)
+            .verticalScroll(outerScrollState)
             .padding(horizontal = 20.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -189,7 +207,7 @@ fun SttScreen(modifier: Modifier = Modifier) {
                 color = ColorCardValue
             )
             Text(
-                text = "Vosk Speech-to-Text · 100% On-Device",
+                text = "Vosk STT + MediaPipe AI · 100% On-Device",
                 fontSize = 13.sp,
                 color = ColorCardText,
                 letterSpacing = 1.sp
@@ -231,7 +249,7 @@ fun SttScreen(modifier: Modifier = Modifier) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
+                .heightIn(min = 120.dp, max = 180.dp),
             colors = CardDefaults.cardColors(containerColor = ColorCardBg),
             shape = RoundedCornerShape(14.dp)
         ) {
@@ -252,7 +270,7 @@ fun SttScreen(modifier: Modifier = Modifier) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(scrollState)
+                        .verticalScroll(transcriptScrollState)
                 ) {
                     val displayText = buildString {
                         if (transcript.isNotEmpty()) {
@@ -279,6 +297,179 @@ fun SttScreen(modifier: Modifier = Modifier) {
                             fontFamily = FontFamily.Monospace,
                             lineHeight = 24.sp
                         )
+                    }
+                }
+            }
+        }
+
+        // ── LIVE AI EMERGENCY GUIDANCE CARD ──────────────────────────────────
+        if (liveAiResult != null) {
+            val ai = liveAiResult!!
+            val cardBg = when {
+                ai.isPendingReview -> Color(0xFF1E2838) // Dark slate blue
+                ai.isApprovedGuidance -> Color(0xFF00382B) // Deep emerald
+                ai.isAmbiguous -> Color(0xFF2A1015) // Deep crimson
+                else -> Color(0xFF2C1C11) // Deep amber
+            }
+            val cardBadgeColor = when {
+                ai.isPendingReview -> Color(0xFF64B5F6) // Soft blue / cyan
+                ai.isApprovedGuidance -> Color(0xFF2ECC71) // Green
+                ai.isAmbiguous -> Color(0xFFE74C3C) // Red
+                else -> Color(0xFFF39C12) // Amber
+            }
+            val cardBadgeText = when {
+                ai.isPendingReview -> "ℹ PROTOCOL RECOGNIZED — RESPONSE PENDING REVIEW"
+                ai.isApprovedGuidance -> "🛡 VERIFIED EMERGENCY PROTOCOL"
+                ai.isAmbiguous -> "⚠ SITUATION UNCLEAR — CLARIFICATION NEEDED"
+                else -> "❓ OUTSIDE SUPPORTED PROTOCOLS"
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = cardBg),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Header Row
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = cardBadgeText,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = cardBadgeColor,
+                            letterSpacing = 1.sp
+                        )
+                        if (ai.topScore != null) {
+                            Text(
+                                text = "Score: ${"%.2f".format(ai.topScore)}",
+                                fontSize = 11.sp,
+                                color = ColorCardText,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+
+                    when {
+                        ai.isPendingReview -> {
+                            // Protocol Recognized Title
+                            Text(
+                                text = ai.title ?: "",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+
+                            // Clear Pending Review Explanation (No placeholder guidance displayed)
+                            Text(
+                                text = "This situation was matched to '${ai.title}', but official medical response for this condition is currently pending authoritative clinical review.",
+                                fontSize = 15.sp,
+                                color = Color(0xFFE0E6ED),
+                                lineHeight = 22.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+
+                            Text(
+                                text = "Please follow direct instructions from your local emergency dispatcher on speakerphone.",
+                                fontSize = 13.sp,
+                                color = Color(0xFF90CAF9),
+                                lineHeight = 18.sp
+                            )
+
+                            if (!ai.reference.isNullOrBlank()) {
+                                Text(
+                                    text = "Status: ${ai.reference}",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFB0BEC5),
+                                    lineHeight = 15.sp
+                                )
+                            }
+                        }
+
+                        ai.isApprovedGuidance -> {
+                            // Protocol Title
+                            Text(
+                                text = ai.title ?: "",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+
+                            // Controlled Medical Guidance Response
+                            Text(
+                                text = ai.response ?: "",
+                                fontSize = 15.sp,
+                                color = Color(0xFFECF0F1),
+                                lineHeight = 22.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+
+                            // Reference & Scope Citation
+                            if (!ai.reference.isNullOrBlank()) {
+                                Text(
+                                    text = "Source: ${ai.reference}",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF88D49E),
+                                    lineHeight = 15.sp
+                                )
+                            }
+                        }
+
+                        ai.isAmbiguous -> {
+                            Text(
+                                text = "LifeLine could not safely determine the exact emergency condition.",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                                lineHeight = 21.sp
+                            )
+                            Text(
+                                text = "Please follow emergency dispatcher instructions. If CPR is needed, ensure the person is unresponsive and not breathing normally.",
+                                fontSize = 13.sp,
+                                color = Color(0xFFFFB4B4),
+                                lineHeight = 18.sp
+                            )
+                            if (!ai.reasonCode.isNullOrBlank()) {
+                                Text(
+                                    text = "Diagnostic: ${ai.reasonCode}",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFE74C3C),
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+
+                        else -> {
+                            Text(
+                                text = "This request is outside LifeLine's supported emergency CPR protocols.",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                                lineHeight = 21.sp
+                            )
+                            Text(
+                                text = "LifeLine does not diagnose general medical conditions, measure vitals, or prescribe medication. Please activate your local emergency response system immediately.",
+                                fontSize = 13.sp,
+                                color = Color(0xFFFFE0B2),
+                                lineHeight = 18.sp
+                            )
+                            if (!ai.reasonCode.isNullOrBlank()) {
+                                Text(
+                                    text = "Diagnostic: ${ai.reasonCode}",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFF39C12),
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -327,8 +518,9 @@ fun SttScreen(modifier: Modifier = Modifier) {
                 onClick = {
                     transcript = ""
                     partialResult = ""
+                    liveAiResult = null
                 },
-                enabled = transcript.isNotEmpty() || partialResult.isNotEmpty(),
+                enabled = transcript.isNotEmpty() || partialResult.isNotEmpty() || liveAiResult != null,
                 modifier = Modifier
                     .weight(1f)
                     .height(54.dp),
@@ -490,40 +682,49 @@ fun SttScreen(modifier: Modifier = Modifier) {
                 val tag = "Task5"
 
                 val testQueries = listOf(
-                    "The person vomited during CPR.",             // Expect VERIFIED
-                    "Should I give this person medicine?",        // Expect UNKNOWN
-                    "The person is breathing but not responding." // Expect AMBIGUOUS
+                    "How fast should CPR compressions be?",        // 1. CPR Rate -> VERIFIED (Approved Guidance)
+                    "How do I start CPR?",                         // 2. CPR Start -> VERIFIED (Approved Guidance)
+                    "Should I give this person medicine?",         // 3. Medicine -> UNKNOWN
+                    "The person is breathing but not responding.", // 4. Contradiction -> AMBIGUOUS
+                    "The person vomited during CPR."               // 5. Vomiting -> PENDING REVIEW
                 )
 
                 val sb = StringBuilder()
-                sb.appendLine("=== Task 5: AiResult Pipeline Demo ===")
+                sb.appendLine("=== Task 5: 5-Scenario Pipeline Demo ===")
                 sb.appendLine()
 
                 testQueries.forEachIndexed { i, q ->
                     val res = engine.process(q)
+                    val displayStatus = when {
+                        res.isPendingReview -> "PENDING REVIEW"
+                        res.isApprovedGuidance -> "VERIFIED (Approved)"
+                        res.isAmbiguous -> "AMBIGUOUS"
+                        else -> "UNKNOWN"
+                    }
+
                     android.util.Log.i(tag, "[$i] Query: \"${res.query}\"")
+                    android.util.Log.i(tag, "  displayStatus=$displayStatus")
                     android.util.Log.i(tag, "  decision=${res.decision}")
                     android.util.Log.i(tag, "  protocolId=${res.protocolId}")
                     android.util.Log.i(tag, "  title=${res.title}")
-                    android.util.Log.i(tag, "  response=${res.response}")
-                    android.util.Log.i(tag, "  reference=${res.reference}")
-                    android.util.Log.i(tag, "  version=${res.version}")
+                    android.util.Log.i(tag, "  isPendingReview=${res.isPendingReview}")
+                    android.util.Log.i(tag, "  isApprovedGuidance=${res.isApprovedGuidance}")
                     android.util.Log.i(tag, "  topScore=${res.topScore}")
-                    android.util.Log.i(tag, "  runnerUpScore=${res.runnerUpScore}")
                     android.util.Log.i(tag, "  gap=${res.gap}")
                     android.util.Log.i(tag, "  reasonCode=${res.reasonCode}")
-                    android.util.Log.i(tag, "  signals=${res.detectedSignals}")
 
-                    sb.appendLine("Query: \"${res.query}\"")
-                    sb.appendLine("  Decision: ${res.decision}")
-                    sb.appendLine("  Protocol: ${res.protocolId ?: "(none)"}")
-                    sb.appendLine("  Title: ${res.title ?: "(none)"}")
-                    sb.appendLine("  Response: ${res.response ?: "(none)"}")
-                    sb.appendLine("  Reference: ${res.reference ?: "(none)"}")
-                    sb.appendLine("  Version: ${res.version ?: "(none)"}")
-                    sb.appendLine("  Scores: top=${"%.4f".format(res.topScore)} runner=${"%.4f".format(res.runnerUpScore)} gap=${"%.4f".format(res.gap)}")
-                    sb.appendLine("  Reason: ${res.reasonCode}")
-                    sb.appendLine("  Signals: ${res.detectedSignals}")
+                    sb.appendLine("${i + 1}. \"${res.query}\"")
+                    sb.appendLine("   Status: $displayStatus")
+                    sb.appendLine("   Protocol: ${res.protocolId ?: "(none)"} [${res.title ?: "N/A"}]")
+                    if (res.isApprovedGuidance) {
+                        sb.appendLine("   Guidance: ${res.response}")
+                    } else if (res.isPendingReview) {
+                        sb.appendLine("   Guidance: [NO MEDICAL RESPONSE — PENDING CLINICAL REVIEW]")
+                    } else {
+                        sb.appendLine("   Guidance: [NO MEDICAL ADVICE EXPOSED]")
+                    }
+                    sb.appendLine("   Score: ${"%.4f".format(res.topScore)}  Gap: ${"%.4f".format(res.gap)}")
+                    sb.appendLine("   Reason: ${res.reasonCode}")
                     sb.appendLine()
                 }
 
@@ -535,7 +736,7 @@ fun SttScreen(modifier: Modifier = Modifier) {
             shape = RoundedCornerShape(12.dp)
         ) {
             Text(
-                text = "✨ Run Task 5: AiResult Pipeline Demo",
+                text = "✨ Run Task 5: 5-Scenario Pipeline Demo",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
